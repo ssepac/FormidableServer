@@ -1,0 +1,26 @@
+{
+  "name": "formidableserver",
+  "version": "1.0.0",
+  "description": "Home server",
+  "main": "index.js",
+  "scripts": {
+    "start:dev": "export ENV=dev && node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ssepac/FormidableServer.git"
+  },
+  "author": "Shane Sepac",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ssepac/FormidableServer/issues"
+  },
+  "homepage": "https://github.com/ssepac/FormidableServer#readme",
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "formidable": "^2.0.1",
+    "fs": "^0.0.1-security",
+    "http": "^0.0.1-security"
+  }
+}
