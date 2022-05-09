@@ -5,8 +5,8 @@ const fs = require("fs");
 const PORT = 3000
 
 const options = {
-    key: fs.readFileSync('local.key'),
-    cert: fs.readFileSync('local.pem')
+    key: fs.readFileSync(process.env.keyDir),
+    cert: fs.readFileSync(process.env.pemDir)
   };
 
 const server = https.createServer(options, (req, res) => {
