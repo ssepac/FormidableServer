@@ -1,16 +1,20 @@
-require('dotenv').config();
+require("dotenv").config();
 const https = require("https");
 const formidable = require("formidable");
 const fs = require("fs");
-const PORT = 3000
+const PORT = 3000;
 
 const options = {
-    key: fs.readFileSync(process.env.keyDir),
-    cert: fs.readFileSync(process.env.pemDir)
-  };
+  key: fs.readFileSync(process.env.keyDir),
+  cert: fs.readFileSync(process.env.pemDir),
+};
 
 const server = https.createServer(options, (req, res) => {
   if (req.url === "/api/upload" && req.method.toLowerCase() === "post") {
+
+    //Ensure authorization
+    if (!assertAuth(req, res)) return;
+
     // parse a file upload
     const form = formidable({
       multiples: true,
@@ -41,24 +45,25 @@ const server = https.createServer(options, (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ fields, files }, null, 2));
     });
-
-    
-
     return;
+  } else if (req.url === "/health" && req.method.toLowerCase() === "get") {
+    console.log("Request for health check received.");
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end("Online.");
   }
-
-    // show a file upload form
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`
-      <h2>With Node.js <code>"http"</code> module</h2>
-      <form action="/api/upload" enctype="multipart/form-data" method="post">
-        <div>Text field title: <input type="text" name="title" /></div>
-        <div>File: <input type="file" name="multipleFiles" multiple="multiple" /></div>
-        <input type="submit" value="Upload" />
-      </form>
-    `);
 });
 
 server.listen(PORT, process.env.ip, () => {
   console.log(`Server listening on https://${process.env.ip}:${PORT}/ ...`);
 });
+
+/** Returns true if authenticated. */
+const assertAuth = (req, res) => {
+  if (req.headers["pass"] != process.env.pass) {
+    console.log("Rejected request because of bad password.");
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Invalid password provided in header.");
+    return false;
+  }
+  return true;
+};
