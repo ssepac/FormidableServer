@@ -11,7 +11,6 @@ const options = {
 
 const server = https.createServer(options, (req, res) => {
   if (req.url === "/api/upload" && req.method.toLowerCase() === "post") {
-
     //Ensure authorization
     if (!assertAuth(req, res)) return;
 
@@ -46,6 +45,35 @@ const server = https.createServer(options, (req, res) => {
       res.end(JSON.stringify({ fields, files }, null, 2));
     });
     return;
+  } else if (req.url === "/files/list" && req.method.toLowerCase() === "get") {
+    if (!assertAuth(req, res)) return;
+
+    try {
+      const files = fs
+        .readdirSync(process.env.uploadDir, { withFileTypes: true })
+        .filter((item) => !item.isDirectory())
+        .map((item) => item.name);
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ files }));
+    } catch (err) {
+      console.log(err);
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("There was a problem getting files.");
+    }
+  } else if (req.url === "/files/clear" && req.method.toLowerCase() === "get") {
+    if (!assertAuth(req, res)) return;
+    try {
+      fs.readdirSync(process.env.uploadDir).forEach((f) =>
+        fs.rmSync(`${process.env.uploadDir}/${f}`)
+      );
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("Successfully cleared files.");
+    } catch (err) {
+      console.log(err);
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("There was a problem clearing files.");
+    }
   } else if (req.url === "/health" && req.method.toLowerCase() === "get") {
     console.log("Request for health check received.");
     res.writeHead(200, { "Content-Type": "application/json" });
