@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/ssepac/FormidableServer#readme",
   "dependencies": {
+    "dotenv": "^16.0.1",
     "formidable": "^2.0.1",
     "fs": "^0.0.1-security",
     "http": "^0.0.1-security"
