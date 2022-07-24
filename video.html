@@ -1,33 +1,57 @@
-
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-	<script src="jquery-3.6.0.min.js"></script>
-	<script>
-		$(document).ready(function(){
-
-  			
-
-		});
-	</script>
-        <meta charset="UTF-8" />
-        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Video Streaming With Node</title>
-        <style>
-            body {
-                margin: 5% auto;
-                max-width: 100%;
-                background-color: rgb(14, 14, 14);
-                padding-top: 10%;
-                padding-left: 35%;
-            }
-        </style>
-    </head>
-    <body>
-        <video id="videoPlayer" width="100%" controls autoplay>
-            <source src="https://ssepac.xyz/videos/Titanic.mp4" type="video/mp4" />
-        </video>
-    </body>
+  <head>
+    <script
+      src="https://code.jquery.com/jquery-3.6.0.slim.min.js"
+      integrity="sha256-u7e5khyithlIdTpu22PHhENmPcRdFiHRjhAuHcs05RI="
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      function getJsonFromUrl(url) {
+        if (!url) url = location.search;
+        var query = url.substr(1);
+        var result = {};
+        query.split("&").forEach(function (part) {
+          var item = part.split("=");
+          result[item[0]] = decodeURIComponent(item[1]);
+        });
+        return result;
+      }
+    </script>
+    <script>
+      $(document).ready(function () {
+        try {
+          if (!window.location.search)
+            throw new Error("No query params provided.");
+          const { fileName, p } = getJsonFromUrl(window.location.search);
+          $(
+            "#videoPlayer"
+          ).html(`<video id="videoPlayer" width="100%" controls autoplay>
+                        <source src="https://ssepac.xyz/videos/${fileName}?p=${p}" type="video/mp4" />
+                    </video>`);
+        } catch (err) {
+		console.log(err)
+          $("#videoPlayer").html(
+            `<p>Did not provide the correct access information.</p>`
+          );
+        }
+      });
+    </script>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video Streaming With Node</title>
+    <style>
+      body {
+        margin: 5% auto;
+        max-width: 100%;
+        background-color: rgb(14, 14, 14);
+        padding-top: 10%;
+        padding-left: 35%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="videoPlayer"></div>
+  </body>
 </html>
-

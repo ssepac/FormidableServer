@@ -3,6 +3,7 @@ const https = require("https");
 const http = require("http");
 const formidable = require("formidable");
 const fs = require("fs");
+const qs = require('query-string')
 const PORT = process.env.port;
 
 //set up redirect for http to https
@@ -27,11 +28,13 @@ const options = {
 }
 
 const server = https.createServer(options, (req, res) => {
-
-  const urlPath = req.split('?')[0]
-  const urlParams = req.split('?')[1]
+  
+const split = req.url.split('?')
+const urlPath = split[0]
+  const urlParams = !split[1] ? {} : qs.parse(split[1])
   if (urlPath  === "/api/upload" && req.method.toLowerCase() === "post") {
     //Ensure authorization
+	  
     if (!assertAuth(req, res)) return;
 
     // parse a file upload
@@ -56,7 +59,7 @@ const server = https.createServer(options, (req, res) => {
     });
 
     form.parse(req, (err, fields, files) => {
-	    B
+	    
       if (err) {
         res.writeHead(err.httpCode || 400, { "Content-Type": "text/plain" });
         res.end(String(err));
@@ -101,7 +104,6 @@ const server = https.createServer(options, (req, res) => {
     res.end("Online.");
   }
 else if (urlPath === "/video" && req.method.toLowerCase() === "get"){
-	
 	fs.readFile(process.env.projectRoot + "video.html", function (error, pgResp) {
             if (error) {
                 res.writeHead(404);
@@ -117,8 +119,9 @@ else if (urlPath === "/video" && req.method.toLowerCase() === "get"){
 //region streaming content (i.e. video serving)
 else if (urlPath.includes("/videos/") && req.method.toLowerCase() === "get"){
 	
-	if (!assertAuth(req, res)) return;
-	const videoName = req.url.substr(req.url.indexOf('/videos/') + '/videos/'.length, req.url.length)
+  assertAuthFromQuery(req, res, urlParams)
+	
+	const videoName = req.url.substr(req.url.indexOf('/videos/') + '/videos/'.length, urlParams.fileName.length+1)
 	const range = req.headers.range;
 	if(!range){
 		res.writeHead(400, {"Content-Type": "text/plain"});
@@ -157,6 +160,16 @@ server.listen(PORT, process.env.ip, () => {
 /** Returns true if authenticated. */
 const assertAuth = (req, res) => {
   if (req.headers["pass"] != process.env.pass) {
+    console.log("Rejected request because of bad password.");
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Invalid password provided in header.");
+    return false;
+  }
+  return true;
+};
+
+const assertAuthFromQuery = (req, res, urlParams) => {
+  if (!urlParams || !urlParams.p || urlParams.p != process.env.pass) {
     console.log("Rejected request because of bad password.");
     res.writeHead(400, { "Content-Type": "text/plain" });
     res.end("Invalid password provided in header.");
