@@ -6,17 +6,6 @@ const fs = require("fs");
 const qs = require("query-string");
 const PORT = process.env.port;
 
-//set up redirect for http to https
-const redirectServer = http.createServer((req, res) => {
-  res.statusCode = 301;
-  res.setHeader("Location", `https://ssepac.xyz${req.url}`);
-  res.end();
-});
-
-//redirectServer.listen(80, process.env.ip, ()=>{
-//	console.log(`Started http redirect server on ${process.env.ip}:${80}`)
-//})
-
 const cert = fs.readFileSync(process.env.certDir);
 const ca = fs.readFileSync(process.env.caDir);
 const key = fs.readFileSync(process.env.keyDir);
@@ -31,9 +20,7 @@ const server = https.createServer(options, (req, res) => {
   const split = req.url.split("?");
   const urlPath = split[0];
   const urlParams = !split[1] ? {} : qs.parse(split[1]);
-  console.log(req.url)
-  console.log(urlPath)
-  console.log(urlParams)
+  
   if (urlPath === "/api/upload" && req.method.toLowerCase() === "post") {
     //Ensure authorization
 
@@ -124,13 +111,22 @@ const server = https.createServer(options, (req, res) => {
     assertAuthFromQuery(req, res, urlParams);
 
     const videoName = urlParams.fileName
+    const videoPath = process.env.videoDir + videoName;
     const range = req.headers.range;
+
+    if(!fs.existsSync(videoPath)){
+      console.log(`Tried to access ${videoPath} which does not exist.`)
+      res.writeHead(400, { "Content-Type": "text/plain" });
+      res.end("The file does not exist.");
+      return;
+    }
+
     if (!range) {
+      console.log("No range header was provided.")
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("No range header was provided.");
       return;
     }
-    const videoPath = process.env.videoDir + videoName;
     const videoSize = fs.statSync(videoPath).size;
     const CHUNK_SIZE = 10 ** 6; // 1MB
     const start = Number(range.replace(/\D/g, ""));
