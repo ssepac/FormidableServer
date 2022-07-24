@@ -117,7 +117,8 @@ else if (urlPath === "/video" && req.method.toLowerCase() === "get"){
 //region streaming content (i.e. video serving)
 else if (urlPath.includes("/videos/") && req.method.toLowerCase() === "get"){
 	
-	if (!assertAuth(req, res)) return;
+  assertAuthFromQuery(req, res, urlParams)
+
 	const videoName = req.url.substr(req.url.indexOf('/videos/') + '/videos/'.length, req.url.length)
 	const range = req.headers.range;
 	if(!range){
@@ -157,6 +158,16 @@ server.listen(PORT, process.env.ip, () => {
 /** Returns true if authenticated. */
 const assertAuth = (req, res) => {
   if (req.headers["pass"] != process.env.pass) {
+    console.log("Rejected request because of bad password.");
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Invalid password provided in header.");
+    return false;
+  }
+  return true;
+};
+
+const assertAuthFromQuery = (req, res, urlParams) => {
+  if (!urlParams || !urlParams.p || urlParams.p != process.env.pass) {
     console.log("Rejected request because of bad password.");
     res.writeHead(400, { "Content-Type": "text/plain" });
     res.end("Invalid password provided in header.");
