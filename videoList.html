@@ -21,33 +21,43 @@
     <script>
       $(document).ready(function () {
         try {
+          console.log("HERE");
           if (!window.location.search)
             throw new Error("No query params provided.");
-          const { fileName, p } = getJsonFromUrl(window.location.search);
-          $(
-            "#videoPlayer"
-          ).html(`<video id="videoPlayer" width="100%" controls playsinline autoplay muted loop>
-                        <source src="https://ssepac.xyz/videos?fileName=${fileName}&p=${p}" type="video/mp4" />
-                    </video>`);
+          const { p } = getJsonFromUrl(window.location.search);
+          console.log("HERE2");
+          $.getJSON(
+            `https://ssepac.xyz/videos/list?p=${p}`,
+            function (data, status) {
+              if (data) {
+                const list = data.files.reduce(
+                  (acc, file) =>
+                    acc.concat(
+                      `<li><a href='https://ssepac.xyz/video?fileName=${file}&p=${p}'>${file}</a></li>`
+                    ),
+                  ""
+                );
+                $("#movieList").html(`<ul>${list}</ul>`);
+              } else {
+                $("movieList").html("<p>Could not get movie list</p>");
+              }
+            }
+          ).fail(function (err) {
+            console.log("FAILED");
+          });
         } catch (err) {
-          $("#videoPlayer").html(
-            `<p>Did not provide the correct access information.</p>`
-          );
+          $("movieList").html("<p>Could not get movie list</p>");
         }
       });
     </script>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SFLIX HOME</title>
-    <style>
-      body {
-        max-width: 100%;
-        background-color: rgb(14, 14, 14);
-      }
-    </style>
+    <title>SFLIX LIST</title>
   </head>
+
   <body>
-    <div id="videoPlayer"></div>
+    <h1>SFlix Movie List</h1>
+    <div id="movieList"></div>
   </body>
 </html>

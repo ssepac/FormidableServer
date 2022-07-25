@@ -20,7 +20,7 @@ const server = https.createServer(options, (req, res) => {
   const split = req.url.split("?");
   const urlPath = split[0];
   const urlParams = !split[1] ? {} : qs.parse(split[1]);
-  
+
   if (urlPath === "/api/upload" && req.method.toLowerCase() === "post") {
     //Ensure authorization
 
@@ -105,24 +105,51 @@ const server = https.createServer(options, (req, res) => {
         res.end();
       }
     );
-  }
-  //region streaming content (i.e. video serving)
-  else if (urlPath.includes("/videos") && req.method.toLowerCase() === "get") {
+  } else if (urlPath === "/video/list" && req.method.toLowerCase() === "get") {
     assertAuthFromQuery(req, res, urlParams);
 
-    const videoName = urlParams.fileName
+    fs.readFile(
+      process.env.projectRoot + "videoList.html",
+      function (error, pgResp) {
+        if (error) {
+          res.writeHead(404);
+          res.write("Contents you are looking are Not Found");
+        } else {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.write(pgResp);
+        }
+
+        res.end();
+      }
+    );
+  }
+  //region streaming content (i.e. video serving)
+  else if (urlPath === "/videos/list" && req.method.toLowerCase() === "get") {
+    assertAuthFromQuery(req, res, urlParams);
+
+    const files = fs
+      .readdirSync(process.env.videoDir, { withFileTypes: true })
+      .filter((item) => !item.isDirectory()) //shows will not appear til this line removed
+      .map((item) => item.name);
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ files }));
+  } else if (urlPath === "/videos" && req.method.toLowerCase() === "get") {
+    assertAuthFromQuery(req, res, urlParams);
+
+    const videoName = urlParams.fileName;
     const videoPath = process.env.videoDir + videoName;
     const range = req.headers.range;
 
-    if(!fs.existsSync(videoPath)){
-      console.log(`Tried to access ${videoPath} which does not exist.`)
+    if (!fs.existsSync(videoPath)) {
+      console.log(`Tried to access ${videoPath} which does not exist.`);
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("The file does not exist.");
       return;
     }
 
     if (!range) {
-      console.log("No range header was provided.")
+      console.log("No range header was provided.");
       res.writeHead(400, { "Content-Type": "text/plain" });
       res.end("No range header was provided.");
       return;
