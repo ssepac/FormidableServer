@@ -21,6 +21,9 @@ const server = https.createServer(options, (req, res) => {
   const urlPath = split[0];
   const urlParams = !split[1] ? {} : qs.parse(split[1]);
 
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD, OPTIONS")
+
   if (urlPath === "/api/upload" && req.method.toLowerCase() === "post") {
     //Ensure authorization
 
