@@ -1,213 +1,350 @@
-require("dotenv").config({ path: `/home/mendel/repos/BackupServer/.env` });
-const https = require("https");
+require("dotenv").config(); //TODO: ADD THIS IN
+const https = require("https"); // TODO: ADD THIS IN
 const http = require("http");
-const formidable = require("formidable");
 const fs = require("fs");
 const qs = require("query-string");
+const {
+  sendCode,
+  verifyCode,
+  verifyToken,
+} = require("./services/auth/auth-service");
+const {
+  insertAction,
+  ACTION_PRE_FLIGHT,
+  ACTION_AUTH,
+  ACTION_AUTH_SEND_CODE_ERROR,
+  ACTION_GENERIC_ERROR,
+  ACTION_AUTH_VERIFY_CODE,
+  ACTION_AUTH_VERIFY_ERROR,
+  ACTION_HEALTH_CHECK,
+  ACTION_VIDEO_LIST,
+  ACTION_VIDEO_LIST_NO_FILENAME_ERROR,
+  ACTION_VIDEO_LIST_NO_FILE_ERROR,
+  ACTION_VIDEO_LIST_NO_RANGE_ERROR,
+  ACTION_VIDEO_LOAD,
+  ACTION_PAGE_NOT_FOUND_ERROR,
+} = require("./services/logging/log-service");
+const { insertUserActivity } = require("./db/logging");
 const PORT = process.env.port;
 
-const cert = fs.readFileSync(process.env.certDir);
-const ca = fs.readFileSync(process.env.caDir);
-const key = fs.readFileSync(process.env.keyDir);
+const server = http.createServer((req, res) => {
+  try {
+    const split = req.url.split("?");
+    const urlPath = split[0];
+    const urlParams = !split[1] ? {} : qs.parse(split[1]);
 
-const options = {
-  cert,
-  ca,
-  key,
-};
+    setHeaders(res);
 
-const server = https.createServer(options, (req, res) => {
-  const split = req.url.split("?");
-  const urlPath = split[0];
-  const urlParams = !split[1] ? {} : qs.parse(split[1]);
+    if (req.method.toLowerCase() === "options") {
+      finalizeRequest(res, "", {
+        identity: req.socket.remoteAddress,
+        action: ACTION_PRE_FLIGHT,
+      });
+      return;
+    }
 
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD, OPTIONS")
-	res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+    if (urlPath === "/auth" && req.method.toLowerCase() === "post") {
+      const buffer = [];
+      req.on("data", (chunk) => {
+        buffer.push(chunk);
+      });
+      req.on("end", () => {
+        try {
+          const received = buffer.join();
+          const parsed = JSON.parse(received);
+          const { email } = parsed;
+          if (!email) {
+            finalizeRequest(
+              res,
+              "No email was provided in the request",
+              {
+                identity: req.socket.remoteAddress,
+                action: ACTION_AUTH_MISSING_PARAMS_ERROR,
+              },
+              400
+            );
+            return;
+          }
 
-	if(req.method.toLowerCase() === "options"){
-		res.writeHead(200, {"Content-Type":"text/plain"}).end()
-		return;
-	}
+          const decodedEmail = decodeURIComponent(email);
 
-
-  if (urlPath === "/api/upload" && req.method.toLowerCase() === "post") {
-    //Ensure authorization
-
-    if (!assertAuth(req, res)) return;
-
-    // parse a file upload
-    const form = formidable({
-      multiples: true,
-      uploadDir: process.env.uploadDir,
-    });
-
-    //rename the incoming file to the file's name
-    form.on("file", (field, file) => {
-      fs.rename(
-        file.filepath,
-        form.uploadDir + "/" + file.originalFilename,
-        () => {
-          console.log(
-            `Succesfully renamed ${
-              form.uploadDir + "/" + file.originalFilename
-            }`
+          sendCode(decodedEmail)
+            .then(({ error }) => {
+              if (error) throw new Error();
+              finalizeRequest(res, "Successfully sent verification code.", {
+                identity: req.socket.remoteAddress,
+                action: ACTION_AUTH,
+                param: decodedEmail
+              });
+            })
+            .catch(() => {
+              finalizeRequest(
+                res,
+                `Could not send verification code to ${decodedEmail}.`,
+                {
+                  identity: req.socket.remoteAddress,
+                  action: ACTION_AUTH_SEND_CODE_ERROR,
+                },
+                500
+              );
+            });
+        } catch (err) {
+          finalizeRequest(
+            res,
+            "There was a problem trying to parse the body of the request.",
+            {
+              identity: req.socket.remoteAddress,
+              action: ACTION_GENERIC_ERROR,
+              stacktrace: err,
+            },
+            500
           );
         }
-      );
-    });
+      });
+    } else if (
+      urlPath === "/auth/token" &&
+      req.method.toLowerCase() === "post"
+    ) {
+      const buffer = [];
+      req.on("data", (chunk) => {
+        buffer.push(chunk);
+      });
+      req.on("end", () => {
+        try {
+          const received = buffer.join();
+          const parsed = JSON.parse(received);
+          const { email, code } = parsed;
+          if (!email || !code) {
+            finalizeRequest(
+              res,
+              "No email and/or code was provided in the request.",
+              {
+                identity: req.socket.remoteAddress,
+                action: ACTION_AUTH_MISSING_PARAMS_ERROR,
+              },
+              400
+            );
+            return;
+          }
 
-    form.parse(req, (err, fields, files) => {
-      if (err) {
-        res.writeHead(err.httpCode || 400, { "Content-Type": "text/plain" });
-        res.end(String(err));
-        return;
-      }
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ fields, files }, null, 2));
-    });
-    return;
-  } else if (urlPath === "/files/list" && req.method.toLowerCase() === "get") {
-    if (!assertAuth(req, res)) return;
+          const decodedEmail = decodeURIComponent(email);
 
-    try {
+          verifyCode(decodedEmail, code)
+            .then((resp) => {
+              if (resp.error) throw new Error();
+              finalizeRequest(res, resp.token, {
+                identity: req.socket.remoteAddress,
+                action: ACTION_AUTH_VERIFY_CODE,
+                param: code,
+              });
+            })
+            .catch((err) => {
+              finalizeRequest(
+                res,
+                "Could not verify code.",
+                {
+                  identity: req.socket.remoteAddress,
+                  action: ACTION_AUTH_VERIFY_ERROR,
+                  stacktrace: err,
+                },
+                500
+              );
+            });
+        } catch (err) {
+          console.error(err);
+          finalizeRequest(
+            res,
+            "There was a problem trying to parse the body of the request.",
+            {
+              identity: req.socket.remoteAddress,
+              action: ACTION_GENERIC_ERROR,
+              stacktrace: err,
+            },
+            500
+          );
+        }
+      });
+    } else if (req.url === "/health" && req.method.toLowerCase() === "get") {
+      console.log("Request for health check received.");
+      finalizeRequest(res, "Online.", {
+        identity: req.socket.remoteAddress,
+        action: ACTION_HEALTH_CHECK,
+      });
+    }
+    //region streaming content (i.e. video serving)
+    else if (urlPath === "/videos/list" && req.method.toLowerCase() === "get") {
+      if (!verifyAuth(res, urlParams)) return;
+
       const files = fs
-        .readdirSync(process.env.uploadDir, { withFileTypes: true })
-        .filter((item) => !item.isDirectory())
+        .readdirSync(process.env.videoDir, { withFileTypes: true })
+        .filter((item) => !item.isDirectory()) //shows will not appear til this line removed
         .map((item) => item.name);
 
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ files }));
-    } catch (err) {
-      console.log(err);
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("There was a problem getting files.");
-    }
-  } else if (urlPath === "/files/clear" && req.method.toLowerCase() === "get") {
-    if (!assertAuth(req, res)) return;
-    try {
-      fs.readdirSync(process.env.uploadDir).forEach((f) =>
-        fs.rmSync(`${process.env.uploadDir}/${f}`)
+      finalizeRequest(res, files, {
+        identity: req.socket.remoteAddress,
+        email: decodeURIComponent(urlParams.email),
+        action: ACTION_VIDEO_LIST,
+      });
+    } else if (urlPath === "/videos" && req.method.toLowerCase() === "get") {
+      if (!verifyAuth(res, urlParams)) return;
+
+      if (!urlParams.fileName) {
+        finalizeRequest(
+          res,
+          "fileName was not provided.",
+          {
+            identity: req.socket.remoteAddress,
+            email: decodeURIComponent(urlParams.email),
+            action: ACTION_VIDEO_LIST_NO_FILENAME_ERROR,
+          },
+          400
+        );
+        return;
+      }
+
+      const videoName = decodeURIComponent(urlParams.fileName);
+      const videoPath = process.env.videoDir + videoName;
+      const range = req.headers.range;
+
+      if (!fs.existsSync(videoPath)) {
+        finalizeRequest(
+          res,
+          "The file does not exist.",
+          {
+            identity: req.socket.remoteAddress,
+            email: decodeURIComponent(urlParams.email),
+            action: ACTION_VIDEO_LIST_NO_FILE_ERROR,
+          },
+          400
+        );
+        return;
+      }
+
+      if (!range) {
+        finalizeRequest(
+          res,
+          "No range header was provided.",
+          {
+            identity: req.socket.remoteAddress,
+            email: decodeURIComponent(urlParams.email),
+            action: ACTION_VIDEO_LIST_NO_RANGE_ERROR,
+          },
+          400
+        );
+        return;
+      }
+      const videoSize = fs.statSync(videoPath).size;
+      const CHUNK_SIZE = 10 ** 6; // 1MB
+      const start = Number(range.replace(/\D/g, ""));
+      const end = Math.min(start + CHUNK_SIZE, videoSize - 1);
+      const contentLength = end - start + 1;
+      const headers = {
+        "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": contentLength,
+        "Content-Type": "video/mp4",
+      };
+
+      res.writeHead(206, headers);
+      const videoStream = fs.createReadStream(videoPath, { start, end });
+      videoStream.pipe(res);
+      insertUserActivity(
+        req.socket.remoteAddress,
+        decodeURIComponent(urlParams.email),
+        videoName,
+        ACTION_VIDEO_LOAD,
+        undefined
       );
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("Successfully cleared files.");
-    } catch (err) {
-      console.log(err);
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("There was a problem clearing files.");
     }
-  } else if (req.url === "/health" && req.method.toLowerCase() === "get") {
-    console.log("Request for health check received.");
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end("Online.");
-  } else if (urlPath === "/video" && req.method.toLowerCase() === "get") {
-    fs.readFile(
-      process.env.projectRoot + "video.html",
-      function (error, pgResp) {
-        if (error) {
-          res.writeHead(404);
-          res.write("Contents you are looking are Not Found");
-        } else {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.write(pgResp);
-        }
-
-        res.end();
-      }
+    //endregion streaming content
+    else {
+      finalizeRequest(
+        res,
+        "Page not found.",
+        {
+          identity: req.socket.remoteAddress,
+          action: ACTION_PAGE_NOT_FOUND_ERROR,
+          param: urlPath,
+        },
+        404
+      );
+    }
+  } catch (err) {
+    console.error(err);
+    finalizeRequest(
+      res,
+      "An unknown server error occurred.",
+      {
+        identity: req.socket.remoteAddress,
+        action: ACTION_GENERIC_ERROR,
+        stacktrace: err,
+      },
+      500
     );
-  } else if (urlPath === "/video/list" && req.method.toLowerCase() === "get") {
-    assertAuthFromQuery(req, res, urlParams);
-
-    fs.readFile(
-      process.env.projectRoot + "videoList.html",
-      function (error, pgResp) {
-        if (error) {
-          res.writeHead(404);
-          res.write("Contents you are looking are Not Found");
-        } else {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.write(pgResp);
-        }
-
-        res.end();
-      }
-    );
-  }
-  //region streaming content (i.e. video serving)
-  else if (urlPath === "/videos/list" && req.method.toLowerCase() === "get") {
-    assertAuthFromQuery(req, res, urlParams);
-
-    const files = fs
-      .readdirSync(process.env.videoDir, { withFileTypes: true })
-      .filter((item) => !item.isDirectory()) //shows will not appear til this line removed
-      .map((item) => item.name);
-
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ files }));
-  } else if (urlPath === "/videos" && req.method.toLowerCase() === "get") {
-    assertAuthFromQuery(req, res, urlParams);
-
-    const videoName = urlParams.fileName;
-    const videoPath = process.env.videoDir + videoName;
-    const range = req.headers.range;
-
-    if (!fs.existsSync(videoPath)) {
-      console.log(`Tried to access ${videoPath} which does not exist.`);
-      res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end("The file does not exist.");
-      return;
-    }
-
-    if (!range) {
-      console.log("No range header was provided.");
-      res.writeHead(400, { "Content-Type": "text/plain" });
-      res.end("No range header was provided.");
-      return;
-    }
-    const videoSize = fs.statSync(videoPath).size;
-    const CHUNK_SIZE = 10 ** 6; // 1MB
-    const start = Number(range.replace(/\D/g, ""));
-    const end = Math.min(start + CHUNK_SIZE, videoSize - 1);
-    const contentLength = end - start + 1;
-    const headers = {
-      "Content-Range": `bytes ${start}-${end}/${videoSize}`,
-      "Accept-Ranges": "bytes",
-      "Content-Length": contentLength,
-      "Content-Type": "video/mp4",
-    };
-
-    res.writeHead(206, headers);
-    const videoStream = fs.createReadStream(videoPath, { start, end });
-    videoStream.pipe(res);
-  }
-  //endregion streaming content
-  else {
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end();
   }
 });
 
 server.listen(PORT, process.env.ip, () => {
-  console.log(`Server listening on https://${process.env.ip}:${PORT}/ ...`);
+  console.log(`Server listening on http://${process.env.ip}:${PORT}/ ...`);
 });
 
-/** Returns true if authenticated. */
-const assertAuth = (req, res) => {
-  if (req.headers["pass"] != process.env.pass) {
-    console.log("Rejected request because of bad password.");
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    res.end("Invalid password provided in header.");
+const verifyAuth = (res, urlParams) => {
+  try {
+    if (!urlParams.email || !urlParams.token) {
+      finalizeRequest(
+        res,
+        "Must provided an email and token in the request.",
+        400
+      );
+      return false;
+    }
+
+    const decodedEmail = decodeURIComponent(urlParams.email);
+    const decodedToken = decodeURIComponent(urlParams.token);
+
+    if (!verifyToken(decodedToken, decodedEmail)) {
+      finalizeRequest(res, "Invalid credentials provided.", 401);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    finalizeRequest(
+      res,
+      "A server error occurred verifying user credentials.",
+      500
+    );
     return false;
   }
-  return true;
 };
 
-const assertAuthFromQuery = (req, res, urlParams) => {
-  if (!urlParams || !urlParams.p || urlParams.p != process.env.pass) {
-    console.log("Rejected request because of bad password.");
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    res.end("Invalid password provided in header.");
-    return false;
-  }
-  return true;
+const setHeaders = (res) => {
+  res.setHeader("Access-Control-Allow-Origin", process.env.allowedOrigins);
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, PUT, POST, DELETE, HEAD, OPTIONS"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With"
+  );
+};
+
+/**
+ * Writes the response back to the client and logs the interaction.
+ * @param {*} res HTTP response object.
+ * @param {*} content The content to write to errorObject or result
+ * @param {{identity:string, action:string, email?:string, param?:string, stacktrace?:string}} logParams An object containing information for logging.
+ * @param {*} statusCode Status code. default is 200.
+ */
+const finalizeRequest = (res, content, logParams, statusCode = 200) => {
+  const obj =
+    statusCode !== 200
+      ? { error: true, errorObject: content }
+      : { error: false, result: content };
+
+  const { identity, action, email, param, stacktrace } = logParams;
+  insertAction(identity, email, param, action, stacktrace);
+
+  res.writeHead(statusCode, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(obj));
 };

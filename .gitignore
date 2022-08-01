@@ -5,4 +5,8 @@ node_modules
 #ssl
 *.pem
 *.key
+*.pub
 keys/
+
+#db
+*.db
