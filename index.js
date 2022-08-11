@@ -23,6 +23,9 @@ const {
   ACTION_VIDEO_LIST_NO_RANGE_ERROR,
   ACTION_VIDEO_LOAD,
   ACTION_PAGE_NOT_FOUND_ERROR,
+  ACTION_AUTH_INVALID_CREDENTIALS,
+  ACTION_AUTH_MISSING_PARAMS_ERROR,
+  insertActionToString,
 } = require("./services/logging/log-service");
 const { insertUserActivity } = require("./db/logging");
 const PORT = process.env.port;
@@ -69,7 +72,7 @@ const server = http.createServer((req, res) => {
           const decodedEmail = decodeURIComponent(email);
 
           sendCode(decodedEmail)
-            .then(({ error }) => {
+            .then(({error}) => {
               if (error) throw new Error();
               finalizeRequest(res, "Successfully sent verification code.", {
                 identity: req.socket.remoteAddress,
@@ -77,7 +80,8 @@ const server = http.createServer((req, res) => {
                 param: decodedEmail
               });
             })
-            .catch(() => {
+            .catch((err) => {
+              console.log(err)
               finalizeRequest(
                 res,
                 `Could not send verification code to ${decodedEmail}.`,
@@ -89,6 +93,7 @@ const server = http.createServer((req, res) => {
               );
             });
         } catch (err) {
+          console.log(err)
           finalizeRequest(
             res,
             "There was a problem trying to parse the body of the request.",
@@ -173,7 +178,7 @@ const server = http.createServer((req, res) => {
     }
     //region streaming content (i.e. video serving)
     else if (urlPath === "/videos/list" && req.method.toLowerCase() === "get") {
-      if (!verifyAuth(res, urlParams)) return;
+      if (!verifyAuth(req, res, urlParams)) return;
 
       const files = fs
         .readdirSync(process.env.videoDir, { withFileTypes: true })
@@ -186,7 +191,7 @@ const server = http.createServer((req, res) => {
         action: ACTION_VIDEO_LIST,
       });
     } else if (urlPath === "/videos" && req.method.toLowerCase() === "get") {
-      if (!verifyAuth(res, urlParams)) return;
+      if (!verifyAuth(req, res, urlParams)) return;
 
       if (!urlParams.fileName) {
         finalizeRequest(
@@ -205,6 +210,7 @@ const server = http.createServer((req, res) => {
       const videoName = decodeURIComponent(urlParams.fileName);
       const videoPath = process.env.videoDir + videoName;
       const range = req.headers.range;
+      
 
       if (!fs.existsSync(videoPath)) {
         finalizeRequest(
@@ -288,12 +294,16 @@ server.listen(PORT, process.env.ip, () => {
   console.log(`Server listening on http://${process.env.ip}:${PORT}/ ...`);
 });
 
-const verifyAuth = (res, urlParams) => {
+const verifyAuth = (req, res, urlParams) => {
   try {
     if (!urlParams.email || !urlParams.token) {
       finalizeRequest(
         res,
         "Must provided an email and token in the request.",
+        {
+          identity: req.socket.remoteAddress,
+          action: ACTION_AUTH_MISSING_PARAMS_ERROR,
+        },
         400
       );
       return false;
@@ -303,7 +313,12 @@ const verifyAuth = (res, urlParams) => {
     const decodedToken = decodeURIComponent(urlParams.token);
 
     if (!verifyToken(decodedToken, decodedEmail)) {
-      finalizeRequest(res, "Invalid credentials provided.", 401);
+      finalizeRequest(res, "Invalid credentials provided.",       {
+        identity: req.socket.remoteAddress,
+        action: ACTION_AUTH_INVALID_CREDENTIALS,
+        param: urlParams.email
+      },
+      401);
       return false;
     }
     return true;
@@ -311,6 +326,11 @@ const verifyAuth = (res, urlParams) => {
     finalizeRequest(
       res,
       "A server error occurred verifying user credentials.",
+      {
+        identity: req.socket.remoteAddress,
+        action: ACTION_GENERIC_ERROR,
+        stacktrace: err,
+      },
       500
     );
     return false;
