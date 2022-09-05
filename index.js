@@ -1,6 +1,5 @@
-require("dotenv").config(); //TODO: ADD THIS IN
-const https = require("https"); // TODO: ADD THIS IN
-const http = require("http");
+require("dotenv").config({path: `${process.cwd()}/.env`});
+const https = require("https");
 const fs = require("fs");
 const qs = require("query-string");
 const {
@@ -25,12 +24,16 @@ const {
   ACTION_PAGE_NOT_FOUND_ERROR,
   ACTION_AUTH_INVALID_CREDENTIALS,
   ACTION_AUTH_MISSING_PARAMS_ERROR,
-  insertActionToString,
 } = require("./services/logging/log-service");
 const { insertUserActivity } = require("./db/logging");
 const PORT = process.env.port;
 
-const server = http.createServer((req, res) => {
+const options = {
+  key: fs.readFileSync(process.env.keyDir),
+  cert: fs.readFileSync(process.env.crtDir)
+}
+
+const server = https.createServer(options, (req, res) => {
   try {
     const split = req.url.split("?");
     const urlPath = split[0];
@@ -46,7 +49,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (urlPath === "/auth" && req.method.toLowerCase() === "post") {
+    if (urlPath === "/api/auth" && req.method.toLowerCase() === "post") {
       const buffer = [];
       req.on("data", (chunk) => {
         buffer.push(chunk);
@@ -107,7 +110,7 @@ const server = http.createServer((req, res) => {
         }
       });
     } else if (
-      urlPath === "/auth/token" &&
+      urlPath === "/api/auth/token" &&
       req.method.toLowerCase() === "post"
     ) {
       const buffer = [];
@@ -169,7 +172,7 @@ const server = http.createServer((req, res) => {
           );
         }
       });
-    } else if (req.url === "/health" && req.method.toLowerCase() === "get") {
+    } else if (req.url === "/api/health" && req.method.toLowerCase() === "get") {
       console.log("Request for health check received.");
       finalizeRequest(res, "Online.", {
         identity: req.socket.remoteAddress,
@@ -177,7 +180,7 @@ const server = http.createServer((req, res) => {
       });
     }
     //region streaming content (i.e. video serving)
-    else if (urlPath === "/videos/list" && req.method.toLowerCase() === "get") {
+    else if (urlPath === "/api/videos/list" && req.method.toLowerCase() === "get") {
       if (!verifyAuth(req, res, urlParams)) return;
 
       const files = fs
@@ -190,7 +193,7 @@ const server = http.createServer((req, res) => {
         email: decodeURIComponent(urlParams.email),
         action: ACTION_VIDEO_LIST,
       });
-    } else if (urlPath === "/videos" && req.method.toLowerCase() === "get") {
+    } else if (urlPath === "/api/videos" && req.method.toLowerCase() === "get") {
       if (!verifyAuth(req, res, urlParams)) return;
 
       if (!urlParams.fileName) {
@@ -291,7 +294,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, process.env.ip, () => {
-  console.log(`Server listening on http://${process.env.ip}:${PORT}/ ...`);
+  console.log(`Server listening on https://${process.env.ip}:${PORT}/ ...`);
 });
 
 const verifyAuth = (req, res, urlParams) => {

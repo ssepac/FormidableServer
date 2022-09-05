@@ -5,7 +5,7 @@ const { insertToken } = require("../../db/tokens");
 const { generateCode } = require("./util/code-gen");
 const { generateToken, decodeToken } = require("./util/crypto");
 const { sendMail } = require("./util/mail");
-require("dotenv").config(); //TODO: add path here
+require("dotenv").config({path: `${process.cwd()}/.env`});
 
 const sendCode = async (email) => {
   try {

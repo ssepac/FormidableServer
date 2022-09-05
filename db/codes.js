@@ -1,5 +1,5 @@
 const { runStatements, get, TABLE_CODES } = require("./db");
-require("dotenv").config(); //TODO: add path here
+require("dotenv").config({path: `${process.cwd()}/.env`});
 
 const insertCode = (email, code) => {
   const createTableOptionStmt = {

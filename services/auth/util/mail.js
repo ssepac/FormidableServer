@@ -1,4 +1,4 @@
-require("dotenv").config(); //TODO: add path here
+require("dotenv").config({path: `${process.cwd()}/.env`});
 const nodemailer = require("nodemailer");
 
 async function sendMail(to, code) {
