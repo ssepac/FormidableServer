@@ -24,6 +24,7 @@ const {
   ACTION_PAGE_NOT_FOUND_ERROR,
   ACTION_AUTH_INVALID_CREDENTIALS,
   ACTION_AUTH_MISSING_PARAMS_ERROR,
+  ACTION_VIDEO_RANGE_ERROR,
 } = require("./services/logging/log-service");
 const { insertUserActivity } = require("./db/logging");
 const PORT = process.env.port;
@@ -242,15 +243,39 @@ const server = https.createServer(options, (req, res) => {
         );
         return;
       }
-      const videoSize = fs.statSync(videoPath).size;
-      const CHUNK_SIZE = 10 ** 6; // 1MB
-      const start = Number(range.replace(/\D/g, ""));
-      const end = Math.min(start + CHUNK_SIZE, videoSize - 1);
-      const contentLength = end - start + 1;
+
+      const size = fs.statSync(videoPath).size;
+      let [start, end] = range.replace(/bytes=/, "").split("-");
+      start = parseInt(start, 10);
+      end = end ? parseInt(end, 10) : size -1; 
+
+      if(!isNaN(start) && isNaN(end)){
+        end = size -1;
+      }
+
+      if(isNaN(start) && !isNaN(end)){
+        start = size - end;
+        end = size -1;
+      }
+
+      if(start >= size || end >= size){
+        res.writeHead(416, {
+          "Content-Range": `bytes */${size}`
+        })
+        insertUserActivity(
+          req.socket.remoteAddress,
+          decodeURIComponent(urlParams.email),
+          videoName,
+          ACTION_VIDEO_RANGE_ERROR,
+          undefined
+        );
+        return res.end();
+      }
+
       const headers = {
-        "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+        "Content-Range": `bytes ${start}-${end}/${size}`,
         "Accept-Ranges": "bytes",
-        "Content-Length": contentLength,
+        "Content-Length": end - start + 1,
         "Content-Type": "video/mp4",
       };
 
